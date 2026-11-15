@@ -142,10 +142,7 @@ FGSM is a single-step gradient-based attack. It uses the sign of the gradient wi
 
 The update is:
 
-\[
-x_{\mathrm{adv}} = \operatorname{clip}
-\left(x + \epsilon \cdot \operatorname{sign}(\nabla_x J(\theta,x,y)),0,1\right)
-\]
+$x_{adv} = \text{clip}(x + \epsilon \cdot \text{sign}(\nabla_x J(\theta,x,y)), 0, 1)$
 
 Where:
 
