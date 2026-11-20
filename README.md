@@ -1,321 +1,277 @@
-# CIFAR-10 Neural Network Classification & Adversarial Robustness
+# CIFAR-10 Neural Network Classification
 
-## Overview
+I started this project with a plain linear model on CIFAR-10 and slowly worked my way up to a CNN, trying out different architectures, data augmentations, optimizers and learning rate schedulers along the way.
 
-This project explores image classification on the CIFAR-10 dataset using PyTorch, progressing from basic fully connected neural networks to Convolutional Neural Networks (CNNs).
+Once I had a model that classified clean images well, I wanted to know how easily it could be fooled. That led me to FGSM and PGD attacks, and then to FGSM and PGD adversarial training to make the model more robust.
 
-The project initially focused on understanding how different architectures learn image features and how techniques such as data augmentation and regularisation can improve generalisation.
+The main aim was not just to get a good accuracy, but to understand how these models behave and what actually makes them more robust.
 
-It was then extended to investigate **adversarial robustness** by implementing two gradient-based adversarial attacks from scratch:
+## Results at a glance
 
-- Fast Gradient Sign Method (FGSM)
-- Projected Gradient Descent (PGD)
+| Experiment | Test Accuracy |
+|---|---:|
+| Final clean CNN | **91.89%** |
+| Clean CNN under FGSM (8/255) | 8.39% |
+| Clean CNN under PGD-10 (8/255) | 0.00% |
+| FGSM-trained CNN under PGD-10 (8/255) | 31.33% |
+| PGD-10-trained CNN under PGD-10 (8/255) | **40.31%** |
 
-The objective is to evaluate how sensitive the trained CNN is to small, deliberately crafted perturbations and compare the effectiveness of these two attacks.
+PGD adversarial training took the model from 0% to 40.31% under the PGD attack I tested, at the cost of some clean accuracy (91.89% down to 81.59%).
 
-## Dataset
+*Note: these are results from my own experiments, not a worst-case robustness guarantee. My PGD evaluation uses 10 iterations with random initialization, a single run, and no random restarts. All numbers are from a single training run, without averaging over seeds.*
 
-The project uses the CIFAR-10 dataset, consisting of 60,000 colour images across 10 classes.
+### A note on hardware and reproducibility
 
-| Property | Description |
-|---|---|
-| Training images | 50,000 |
-| Testing images | 10,000 |
-| Image dimensions | 32 × 32 × 3 |
-| Number of classes | 10 |
-| Classes | Airplane, Automobile, Bird, Cat, Deer, Dog, Frog, Horse, Ship, Truck |
+All the results, especially the training times, are based on my own hardware (listed at the end). Timings will be different on different hardware. This could also change which models turn out best, because I picked my final models using the timings I got on my machine.
 
-The dataset was loaded using `torchvision.datasets.CIFAR10`.
+I have tried to make the program as reproducible as possible, but with so much randomness involved (augmentations, random initialization, PGD, and so on), the numbers you get might not match mine exactly. The overall conclusions (for example, the clean model failing under attack and adversarial training improving robustness) should hold, but small differences, like the one between PGD-10 and PGD-15 training, may not.
 
-Images were converted to floating-point tensors, scaled to [0, 1], and normalised using the CIFAR-10 channel-wise mean and standard deviation.
+---
 
-## Technologies Used
+## 1. The Dataset
 
-- Python
-- PyTorch
-- Torchvision
-- Torchmetrics
-- Matplotlib
-- Pandas
-- MLxtend
-- Jupyter Notebook
+CIFAR-10 has 60,000 colour images of size 32 × 32 across 10 classes (6,000 per class): 50,000 for training and 10,000 for testing. I loaded it with `torchvision.datasets` and plotted a few images with Matplotlib before building anything.
 
-## Hardware Specifications
+## 2. Starting Simple
 
-All experiments were conducted on the following hardware:
+### 2.1 Linear model
+My baseline was a model with only linear layers and no activation functions. The accuracy was low, which makes sense: a stack of linear layers is still just one linear transformation, and it can't pick up the non-linear patterns in images.
 
-| Component | Specification |
-|---|---|
-| CPU | AMD Ryzen 7 7445HS |
-| GPU | NVIDIA GeForce RTX 4050 Laptop GPU |
-| GPU VRAM | 6 GB |
-| RAM | 16 GB |
-| Framework | PyTorch |
-| CUDA | 11.8 (PyTorch build) |
+### 2.2 Adding non-linearity
+I added activation functions and raised the epochs from 3 to 10. Accuracy improved noticeably.
 
-## Model Architectures and Experiments
+### 2.3 First CNN
+Since the fully connected models were still not good enough, I moved to convolutional layers. I tried different numbers of conv layers and hidden units, and the CNN was a big jump over the earlier models.
 
-I experimented with three different neural network architectures.
-
-### 1. Linear Model
-
-A basic fully connected linear classifier that served as the starting point for understanding image classification.
-
-### 2. Linear + Nonlinear Model
-
-A fully connected neural network incorporating multiple linear layers and ReLU activation functions. The nonlinear activations allow the network to learn more complex relationships between input pixels and image classes.
-
-### 3. Convolutional Neural Network (CNN)
-
-The CNN uses convolutional layers to extract spatial features, ReLU activation functions to introduce nonlinearity, and max-pooling layers to reduce spatial dimensions.
-
-I experimented with:
-
-- Different numbers of convolutional blocks, including two and three blocks.
-- Different hidden-unit configurations: 32, 64, 128 and 256.
-- Batch Normalization and Dropout.
-- Different optimisers and learning-rate scheduling strategies.
-
-The initial CNN experiments established a substantial improvement over the fully connected architectures. Subsequent experiments incorporated data augmentation and regularisation to improve generalisation.
-
-## Data Augmentation and Regularisation
-
-To improve the model's ability to generalise to unseen images, I experimented with several data augmentation techniques.
-
-These included:
-
-- RandomHorizontalFlip
-- RandomCrop
-- RandomErasing
-- ColorJitter
-- TrivialAugmentWide
-- MixUp
-- CutMix
-
-I also explored Batch Normalization and Dropout to help control overfitting.
-
-Not every augmentation improved performance. Some combinations reduced training accuracy or failed to improve test accuracy. These experiments helped identify the importance of evaluating augmentation strategies rather than assuming that more augmentation necessarily leads to better results.
-
-## Classification Results
-
-The initial architecture experiments showed the following progression:
+It also overfit: training accuracy was well above testing accuracy. The confusion matrix showed where it struggled, mostly between visually similar classes like cats and dogs, and automobiles and trucks.
 
 | Model | Training Accuracy | Testing Accuracy |
 |---|---:|---:|
 | Linear Model | 39.46% | 36.88% |
-| Linear + Nonlinear Model | 48.30% | 45.85% |
-| Initial CNN | 81% | 73.4% |
+| Linear + Non-Linear | 48.30% | 45.85% |
+| Initial CNN | 81.00% | 73.40% |
 
-After further experimentation with CNN architectures, augmentation and regularisation, a later model achieved the following clean test performance:
+These are from the early architecture experiments, before any of the improvements below.
 
-| Metric | Result |
-|---|---:|
-| Clean Test Accuracy | **89.72%** |
-| Clean Test Loss | **0.3102** |
+<!-- TODO: embed your confusion matrix image here, e.g.
+![Confusion matrix](Plot_images/confusion_matrix.png) -->
 
-These figures represent different stages of experimentation: the initial CNN result is not the final model's clean test result.
+## 3. Fighting Overfitting
 
-## CPU vs GPU Performance
+The initial CNN had a 7.6 point gap between training and testing accuracy (81.00% vs 73.40%), so my next goal was to close it. I added Batch Normalization and Dropout, and then spent a good amount of time on data augmentation, which shows the model different versions of the same image.
 
-I also compared training times across CPU and GPU to understand how different architectures benefit from GPU acceleration. One thing to note is that the CNN 64 units time for GPU is actually the time taken by it for running 128 hidden units. I had found 128 units to be the best number, but it was taking very very long to execute on the CPU, so I changed it to 64 units for CPU 
+**RandomHorizontalFlip + RandomCrop** (with padding so the image size stays the same) gave a big improvement straight away. `ColorJitter` didn't do as well as this pair.
 
-| Model | CPU Training Time | GPU Training Time |
-|---|---:|---:|
-| Linear Model | 98.84 s | 87.93 s |
-| Linear + Nonlinear Model | 91.53 s | 90.60 s |
-| CNN (32 hidden units) | 323.67 s | 103.43 s |
-| CNN  |(64 hidden units) 791.58 s | (128 hidden units) 104.63 s |
+**TrivialAugmentWide** did worse than flip + crop, so I dropped it.
 
-Training times are taken from individual notebook runs and are environment- and run-dependent. They should be treated as indicative rather than formal benchmark measurements.
+**RandomErasing** helped. Forcing the model to work with part of an image seems to stop it leaning on one region. Flip + crop + erasing was my best combination at this point.
 
-## Adversarial Robustness Experiments
+**CutMix** did not help, and the model had a harder time learning with it. **MixUp** was worse than CutMix, and CutMix + MixUp together was worse still. I left all of them out.
 
-After establishing a CNN classifier, I extended the project to investigate adversarial attacks.
+**RandAugment** made no big difference when I tested it on its own. I kept it and tested it together with the other changes and the longer training schedule, so I can't say how much of the final improvement is down to RandAugment itself.
 
-The experiments focus on generating adversarial examples that cause a trained model to misclassify images through carefully calculated perturbations.
+| Technique | Observation |
+|---|---|
+| RandomHorizontalFlip + RandomCrop | Significant improvement |
+| ColorJitter | Not as good as flip + crop |
+| TrivialAugmentWide | Lower than flip + crop |
+| RandomErasing | Improved performance |
+| CutMix | Reduced test performance |
+| MixUp | Worse than CutMix |
+| CutMix + MixUp | Worse than either alone |
+| RandAugment | No major standalone improvement |
 
-Both attacks were implemented manually using PyTorch and automatic differentiation.
+Because I changed several things between experiments, I can't separate how much each one contributed to reducing overfitting.
 
-### 1. Fast Gradient Sign Method (FGSM)
+## 4. Schedulers, Optimizers and the Final Clean Model
 
-FGSM is a single-step gradient-based attack. It uses the sign of the gradient with respect to the input image to determine the direction in which the input should be perturbed. It makes changes to the input, that is the image rather than the weights and bias
+Next I tried to see if changing the learning rate during training, or switching optimizer, could push things further. I split the 50,000 training images into 45,000 for training and 5,000 for validation, used the validation set to compare configurations, and kept the test set untouched for the final evaluation.
 
-The update is:
+I tried `StepLR`, `ReduceLROnPlateau` and `CosineAnnealingLR`. I also tried AdamW, which applies weight decay separately from the gradient update instead of folding it into the loss like L2 regularization. AdamW with CosineAnnealingLR worked best for me.
 
-$x_{adv} = \text{clip}(x + \epsilon \cdot \text{sign}(\nabla_x J(\theta,x,y)), 0, 1)$
+### Final architecture
+- 3 convolutional blocks, each with 3 conv layers (3 × 3 kernels with padding)
+- Channels increase block by block: 64 → 128 → 256
+- Batch Normalization and ReLU in the conv blocks, followed by Max Pooling
+- Dropout (p = 0.2) in the classifier
 
-Where:
+### Final augmentation pipeline
+1. RandAugment (`num_ops=2`, `magnitude=2`)
+2. RandomHorizontalFlip
+3. RandomCrop (`padding=3`)
+4. RandomErasing (`p=0.3`)
 
-- \(x\) is the original image.
-- \(\epsilon\) controls the perturbation magnitude.
-- \(J\) is the loss function.
-- \(\nabla_x J\) is the gradient of the loss with respect to the input.
+Inputs are normalized with the CIFAR-10 channel means and standard deviations.
 
-The attack was implemented in the original pixel space, with images denormalised before perturbation and normalised again before model evaluation.
+### Training configuration
 
-**FGSM results:**
+| Parameter | Value |
+|---|---|
+| Optimizer | AdamW |
+| Initial learning rate | 0.001 |
+| Weight decay | 0.0005 |
+| Scheduler | CosineAnnealingLR |
+| Epochs | 30 |
+| Batch size | 128 |
+| Train / Validation / Test | 45,000 / 5,000 / 10,000 |
 
-| Epsilon | Test Loss | Test Accuracy |
-|---:|---:|---:|
-| 0 | 0.3102 | 89.72% |
-| 0.001 | 0.5386 | 82.86% |
-| 0.005 | 2.3313 | 45.63% |
-| 0.01 | 5.2885 | 18.48% |
-| 0.05 | 9.8982 | 2.43% |
+I kept the checkpoint with the lowest validation loss. It reached a clean test accuracy of **91.89%** with a test loss of **0.2703**, the best clean result in the project.
 
-The results show a substantial reduction in classification accuracy as the perturbation magnitude increases. The graph for loss vs epsilon and accuracy vs epsilon is in Plot_images/FGSM
+<!-- TODO (optional): add the final model's training accuracy here so the train/test gap is visible, e.g.
+"Final model: train XX.XX% vs test 91.89%." -->
 
-### 2. Projected Gradient Descent (PGD)
+## 5. Attacking the Model
 
-PGD is an iterative gradient-based attack. It is basically an iterative FGSM. Instead of applying a single perturbation, it repeatedly updates the adversarial image using small gradient steps. This makes it much more reliable and powerful than FGSM, as instead of one big perturbation, it at each iteration calculates the gradient and moves such that it stays withing the epsilon ball area. So it prevents from overshooting
+A high clean accuracy says nothing about what happens when the input is slightly changed. Adversarial attacks add small perturbations that are hard to see but can still make the model predict the wrong class. I implemented two of them, following Madry et al. for the PGD side:
 
-The attack also projects the perturbed image back into the permitted epsilon neighbourhood of the original image after each update.
+[Towards Deep Learning Models Resistant to Adversarial Attacks – Madry et al. (2018)](https://arxiv.org/abs/1706.06083)
 
-The implementation uses:
-
-- Random initialisation within the permitted perturbation range.
-- Iterative gradient-based updates.
-- Projection onto the \(L_\infty\) perturbation constraint.
-- Clipping to maintain valid pixel values in the [0, 1] range.
-
-For the epsilon comparison experiments, I used 10 iterations and set the step size to:
+### 5.1 FGSM
+FGSM takes one step in the direction that increases the loss, using the sign of the gradient with respect to the input:
 
 \[
-\alpha = \frac{\epsilon}{4}
+x_{adv}=x+\epsilon\cdot\text{sign}(\nabla_x J(\theta,x,y))
 \]
 
-**PGD results:**
+where \(x\) is the original image, \(\epsilon\) controls the size of the perturbation, and \(J\) is the loss. I implemented it with PyTorch autograd. With \(\epsilon = 0\) the model behaves exactly as on clean images, and accuracy drops as \(\epsilon\) grows. The perturbed images look almost the same to me, yet the model misclassifies them.
 
-| Epsilon | Test Loss | Test Accuracy |
-|---:|---:|---:|
-| 0 | 0.3102 | 89.72% |
-| 0.001 | 0.5464 | 82.69% |
-| 0.005 | 3.0046 | 36.95% |
-| 0.01 | 8.7593 | 6.78% |
-| 0.05 | 43.5788 | 0.00% |
+### 5.2 PGD
+PGD is the iterative version: random initialization, several small gradient steps, and a projection after each step so the perturbation stays within the \(\epsilon\) limit. For my epsilon experiments I used 10 iterations with step size
 
-The graphs for loss vs epsilon and accuracy vs epsilon for PGD can be found at Plot_images/PGD
+\[
+\alpha=\frac{\epsilon}{4}
+\]
 
-### 3. FGSM vs PGD Comparison
+which is 2/255 for the main 8/255 comparison. I also tried more iterations to see if the attack would get stronger.
 
-I compared both attacks using the same epsilon values to understand their relative effectiveness.
+### 5.3 FGSM vs PGD
+Under the configurations I tested, PGD was clearly stronger: the loss went up much more at higher epsilons and accuracy dropped further.
 
-| Epsilon | FGSM Accuracy | PGD Accuracy |
-|---:|---:|---:|
-| 0 | 89.72% | 89.72% |
-| 0.001 | 82.86% | 82.69% |
-| 0.005 | 45.63% | 36.95% |
-| 0.01 | 18.48% | 6.78% |
-| 0.05 | 2.43% | 0.00% |
+| Evaluation (clean model) | Test Accuracy | Test Loss |
+|---|---:|---:|
+| Clean images | 91.89% | 0.2703 |
+| FGSM (8/255) | 8.39% | 9.3832 |
+| PGD-10 (8/255) | 0.00% | 48.4285 |
 
-Across the tested non-zero epsilon values, PGD achieved lower classification accuracy than FGSM. This indicates that PGD was the stronger attack under the configurations tested.
+Going from 91.89% to 0.00% with perturbations I can barely see was the clearest sign to me that clean accuracy and robustness are two different things.
 
-The comparison also demonstrates how iterative attacks can produce stronger adversarial effects than a single-step attack.
+<!-- TODO: embed your FGSM / PGD example images here, e.g.
+![FGSM vs PGD](Plot_images/Comparison_PGD_FGSM/<your-image>.png) -->
 
-### 4. Visualising Adversarial Examples
+**Limitation:** this PGD result comes from a 10-step attack with random initialization and one evaluation run. Multiple restarts and stronger evaluations like AutoAttack would give a more reliable picture.
 
-I also visualised the original image alongside its FGSM- and PGD-perturbed versions to observe how adversarial perturbations affect the model's predictions.
+## 6. Adversarial Training
 
-The project includes plots showing:
+To see if I could make the model more robust, I trained it on adversarial images generated during training. I used the same 45,000 / 5,000 / 10,000 split as before, with the validation set used during training and the test set kept for evaluation.
 
-- FGSM accuracy vs epsilon.
-- FGSM loss vs epsilon.
-- PGD accuracy vs epsilon.
-- PGD loss vs epsilon.
-- FGSM vs PGD accuracy comparison.
-- FGSM vs PGD loss comparison.
+<!-- TODO: state the epochs and learning rate used for adversarial training, or write
+"same configuration as the clean model" if that's the case. -->
 
-The plots are available in the `Plot_images` directory.
+### 6.1 FGSM adversarial training
+I tried perturbing all batches, 50% of them and 25% of them. Perturbing 50% gave the best balance of training time and robustness: 25% wasn't strong enough, and perturbing everything took much longer without a matching gain. I used ε = 8/255, since smaller values didn't give enough robustness and larger ones made training harder for my model.
+
+### 6.2 PGD adversarial training
+Same idea, with randomly initialized PGD perturbations: 50% of batches, ε = 8/255, 10 PGD iterations for the main model (I tried 15 later, see Section 7).
+
+### 6.3 Comparison
+
+| Model | Clean Accuracy | FGSM Accuracy | PGD-10 Accuracy |
+|---|---:|---:|---:|
+| Clean CNN | 91.89% | 8.39% | 0.00% |
+| FGSM-Trained CNN | 83.48% | 44.36% | 31.33% |
+| PGD-10-Trained CNN | 81.59% | 46.70% | 40.31% |
+
+Both adversarially trained models lost clean accuracy but became far more robust, and the PGD-trained model beat the FGSM-trained one against both attacks. This is the trade-off between clean accuracy and robustness.
+
+## 7. Does More PGD Training Help?
+
+I trained another model with 15 PGD iterations and evaluated both models with PGD-10, 20 and 50 at ε = 8/255.
+
+| Training Model | PGD-10 | PGD-20 | PGD-50 |
+|---|---:|---:|---:|
+| PGD-10 Trained | 40.21% | 39.05% | 38.88% |
+| PGD-15 Trained | 40.55% | 39.64% | 39.43% |
+
+PGD-15 was slightly better everywhere, by less than 1 percentage point, but it took more than 1000 extra seconds to train. I stayed with PGD-10 as my final robust model.
+
+*Note on the numbers:* the PGD-10-trained model scores 40.31% in the main comparison and 40.21% here. PGD starts from a random initialization, so the exact accuracy varies a little between evaluation runs.
+
+## 8. PGD-Trained Model at Different Epsilons
+
+I also checked how the final PGD-10-trained model holds up as the attack gets stronger (PGD-10 attacks):
+
+| Epsilon | Test Accuracy | Test Loss |
+|---|---:|---:|
+| 2/255 | 72.94% | 0.7719 |
+| 4/255 | 62.39% | 0.9938 |
+| 8/255 | 40.31% | 1.5957 |
+
+Accuracy falls as epsilon grows, as you'd expect. Still, at 8/255 the model keeps 40.31%, compared with 0% for the clean model under the same attack.
+
+<!-- TODO (optional): add an accuracy-vs-epsilon line chart here. -->
+
+## 9. Takeaways
+
+- CNNs were a big step up from the linear models, and augmentation (flip, crop, erasing) did a lot of the work in reducing overfitting. CutMix and MixUp didn't help my model.
+- AdamW with CosineAnnealingLR gave me the best clean model: 91.89%.
+- That same model dropped to 8.39% under FGSM and 0.00% under PGD.
+- Adversarial training fixed a lot of that (40.31% under PGD), but it cost about 10 points of clean accuracy. PGD training beat FGSM training, and going from 10 to 15 PGD iterations wasn't worth the extra time.
+
+## 10. What I Want to Try Next
+
+- Stronger evaluation: multiple random restarts, and AutoAttack
+- More epsilon values, step sizes and PGD iteration counts
+- TRADES, compared against standard PGD adversarial training
+- Looking more closely at the accuracy vs robustness trade-off
+- Larger architectures and datasets, once I have the compute
+
+---
+
+## How to Run
+
+**Requirements:** Python, PyTorch, Torchvision, NumPy, Pandas, Matplotlib, Seaborn, Scikit-learn, TorchMetrics, mlxtend.
+
+```bash
+git clone https://github.com/PranavAgrawal07/CIFAR-10-Neural-Network-Classification.git
+cd CIFAR-10-Neural-Network-Classification
+pip install torch torchvision numpy pandas matplotlib seaborn scikit-learn torchmetrics mlxtend
+```
+
+For GPU support, install a PyTorch build that matches your CUDA version from the [official PyTorch guide](https://pytorch.org/get-started/locally/). I used an Anaconda environment, but a normal `pip` setup works too.
+
+Then start Jupyter, open `CIFAR-10_Neural_Network_Classification.ipynb` and run the cells in order. CIFAR-10 downloads automatically. PGD adversarial training takes a long time, so a CUDA GPU is recommended.
 
 ## Project Structure
 
 ```text
-CIFAR-10_Classification/
+CIFAR-10-Neural-Network-Classification/
 │
 ├── CIFAR-10_Neural_Network_Classification.ipynb
 │
 ├── Plot_images/
 │   ├── FGSM/
-│   │   ├── FGSM_Accuracy_vs_Epsilon.png
-│   │   └── FGSM_loss_vs_Epsilon.png
-│   │
 │   ├── PGD/
-│   │   ├── PGD_Accuracy_vs_Epsilon.png
-│   │   └── PGD_loss_vs_Epsilon.png
-│   │
 │   └── Comparison_PGD_FGSM/
-│       ├── PGD_Accuracy_vs_FGSM_Accuracy.png
-│       └── PGD_loss_vs_FGSM_loss.png
 │
 ├── models/
-│
-├── data/
+│   ├── best_model.pth
+│   └── Best_Robust_Model.pth
 │
 └── README.md
 ```
 
-The `data` and `models` directories are used locally for dataset and model-related files; they are not necessarily included in the GitHub repository.
+The notebook has the full implementation and experiments, `Plot_images` has the visualisations, and `models` has the saved weights. Other files may be present in the repository.
 
-## Training and Evaluation
+## Hardware and Software
 
-I implemented reusable training and testing functions in PyTorch to keep the experiments organised.
-
-The models were evaluated using:
-
-- Training and testing loss.
-- Training and testing accuracy.
-- Confusion matrices.
-- Sample predictions.
-- Adversarial test accuracy and loss.
-- Accuracy and loss comparisons across perturbation magnitudes.
-
-## Key Observations
-
-- CNNs substantially outperformed the initial fully connected architectures on CIFAR-10.
-- Data augmentation and regularisation provided additional opportunities to improve generalisation, although their effectiveness varied across experiments.
-- Both FGSM and PGD caused significant reductions in classification accuracy as epsilon increased.
-- PGD produced a stronger reduction in accuracy than FGSM across the tested non-zero epsilon values.
-- At epsilon = 0.01, PGD reduced accuracy to 6.78%, compared with 18.48% for FGSM.
-- At epsilon = 0.05, PGD reduced the measured accuracy to 0%.
-
-## Future Improvements
-
-- Investigate adversarial training to improve model robustness.
-- Study the effect of PGD step size and number of iterations on attack effectiveness.
-- Evaluate class-wise vulnerability to adversarial perturbations.
-- Explore additional adversarial attack methods.
-- Investigate the trade-off between clean accuracy and adversarial robustness.
-
-## How to Run
-
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/PranavAgrawal07/CIFAR-10-Neural-Network-Classification.git
-   ```
-
-2. Navigate to the project directory:
-
-   ```bash
-   cd CIFAR-10-Neural-Network-Classification
-   ```
-
-3. Install the required dependencies:
-
-   ```bash
-   pip install torch torchvision torchmetrics matplotlib pandas mlxtend jupyter
-   ```
-
-4. Launch Jupyter Notebook:
-
-   ```bash
-   jupyter notebook
-   ```
-
-5. Open `CIFAR-10_Neural_Network_Classification.ipynb` and execute the cells sequentially.
-
-The notebook downloads CIFAR-10 through Torchvision when the dataset is not already available locally.
+| Component | Details |
+|---|---|
+| CPU | AMD Ryzen 7 7445HS |
+| GPU | NVIDIA RTX 4050 Laptop GPU (6 GB VRAM) |
+| RAM | 16 GB |
+| Python | Python 3 (Anaconda environment) |
+| PyTorch | 2.5.1 with CUDA 11.8 |
 
 ---
 
-**Note:** The reported results correspond to the configurations and notebook runs documented in this project. Training times and adversarial attack measurements may vary with hardware, random initialisation and experimental settings.
+This project helped me understand how to build and improve a CNN, and also how fragile it can be, and how adversarial training can make it harder to fool.
